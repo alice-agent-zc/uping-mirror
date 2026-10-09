@@ -32,6 +32,22 @@ hot-reload, load balancing, health checks.
 - **Unknown `Host` now gets a `404`** instead of a `500` from the proxy.
 - **Abuse protection** (see below).
 
+## Requirements
+
+uping is a single Rust binary. Building it needs:
+
+- A Rust toolchain — edition 2021, any reasonably recent stable.
+- A C toolchain (`cc` / `gcc` / `clang`) — the TLS and compression libraries
+  it links against are C.
+- **CMake** — Pingora's HTTP stack pins `flate2` to the `zlib-ng` backend, and
+  `libz-ng-sys` builds that backend with CMake at compile time. Without `cmake`
+  on `PATH`, the build stops inside `libz-ng-sys`.
+- OpenSSL development headers — the TLS backend is OpenSSL (`libssl-dev` on
+  Debian/Ubuntu).
+
+Running it needs a certificate + key per domain, and the right to bind `:80`
+and `:443` (root or `CAP_NET_BIND_SERVICE`).
+
 ## Config
 
 ```toml
@@ -66,6 +82,9 @@ upstream = "127.0.0.1:8080"
 
 Add one `[[server]]` block per domain. All domains share the single `:443`
 listener; the right certificate is chosen per-connection via SNI.
+
+`config.toml` in the current directory is the built-in default; pass another
+path as the first argument to override it.
 
 ## Abuse protection
 
@@ -115,6 +134,8 @@ So a backend that needs to know the request arrived over HTTPS can read
 ## Build & run
 
 ```sh
+git clone https://github.com/raonagos/uping.git
+cd uping
 cargo build --release
 sudo ./target/release/uping config.toml
 ```
@@ -128,6 +149,35 @@ sudo setcap 'cap_net_bind_service=+ep' ./target/release/uping
 Reading Let's Encrypt keys needs root anyway (`privkey.pem` is mode 0600), so
 running uping as root is the expected deployment. Set custom ports under
 `[listen]` to run unprivileged (see `test.config.toml`).
+
+Run the test suite with:
+
+```sh
+cargo test
+```
+
+## Install as a service
+
+`deploy/` ships a systemd unit and a one-shot installer for the usual
+root deployment:
+
+```sh
+cargo build --release
+sudo install -m 0755 target/release/uping /usr/local/bin/uping
+sudo install -d -m 0755 /etc/uping
+sudo install -m 0644 config.toml /etc/uping/config.toml   # your real config
+sudo ./deploy/install.sh
+```
+
+`install.sh` copies `deploy/uping.service` into `/etc/systemd/system/`, enables
+it, and starts it. Logs go to the journal:
+
+```sh
+journalctl -u uping -f
+```
+
+The unit runs as root — it has to bind `:80`/`:443` and read mode-`0600` private
+keys — with a set of hardening options that uping does not need to opt out of.
 
 ## Notes
 
@@ -147,4 +197,11 @@ src/
   tls.rs     # SNI certificate resolver
   limits.rs  # per-IP rate + connection limiters
   proxy.rs   # HTTPS proxy + HTTP redirect
+deploy/
+  install.sh     # copy the unit, enable + start it
+  uping.service  # systemd unit
 ```
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).

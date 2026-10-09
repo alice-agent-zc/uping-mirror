@@ -1,0 +1,47 @@
+[Unit]
+Description=uping reverse proxy
+Documentation=https://github.com/raonagos/uping
+# We need a working DNS/network before resolving upstreams like "localhost:42617".
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/uping /etc/uping/config.toml
+
+# Pingora runs its own worker threads; the main process stays in the foreground
+# and handles SIGTERM cleanly, so on-failure restarts are enough.
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# uping must bind :80/:443 and read /etc/letsencrypt/live/.../privkey.pem
+# (mode 0600, root-only), so it runs as root. This is the intended deployment.
+User=root
+Group=root
+
+# Logs go to the journal:  journalctl -u uping -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=uping
+
+# Uncomment for verbose per-request logging:
+#Environment=RUST_LOG=info
+
+# --- Hardening (safe for uping) ---
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# ProtectSystem=strict makes / read-only; these two give back exactly what we need.
+ReadWritePaths=/var/log
+ReadOnlyPaths=/etc/letsencrypt /etc/uping
+
+[Install]
+WantedBy=multi-user.target
